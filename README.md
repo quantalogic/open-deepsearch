@@ -1,4 +1,3 @@
-
 # Quantalogic Deep Search
 
 **Quantalogic Deep Search** is a multi-source research analysis tool that uses the innovative ReAct AI Agent Quantalogic Principle to perform in-depth exploratory searches, synthesize results, and generate comprehensive reports—all via a user-friendly web interface.
@@ -20,6 +19,14 @@ Quantalogic Deep Search harnesses the power of advanced language models and an a
 - **Python 3.12+** installed.
 - **uv** installed (a versatile tool runner).
 - Set your **OPENROUTER_API_KEY** environment variable appropriately.
+- **SerpAPI Key:** Obtain a free API key from [SerpAPI](https://serpapi.com/) for web search functionality.
+  ```bash
+  # Set your SerpAPI key as an environment variable
+  export SERPAPI_API_KEY=='your_serpapi_key_here'
+  ```
+
+  **Note:** Keep your SerpAPI key confidential. Do not commit it to version control. 
+  Consider using a `.env` file or your system's environment variable management.
 
 ### Quick Start Guide
 
@@ -126,4 +133,3 @@ Feel free to:
 Distributed under the MIT License. See `LICENSE` for more information.
 
 ---
-
