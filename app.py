@@ -9,27 +9,27 @@
 
 import os
 import sys
-import json
+import time
 import streamlit as st
 
 # ----------------------------------------------------------------------
-# Set page config as the very first Streamlit command
+# Streamlit Page Configuration
 # ----------------------------------------------------------------------
 st.set_page_config(
     page_title="Quantalogic Deep Search",
     page_icon="🔍",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="expanded"
 )
 
 # ----------------------------------------------------------------------
-# Inject custom CSS for improved UX (fonts, buttons, collapsible tree, etc.)
+# Custom CSS for Styling
 # ----------------------------------------------------------------------
-st.markdown(
-    """
+st.markdown("""
     <style>
-    /* Overall app styling */
+    /* General application styling */
     .stApp { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+    
     /* Button styling */
     .stButton>button {
         background-color: #4CAF50;
@@ -40,12 +40,14 @@ st.markdown(
         border: none;
         padding: 0.5rem 1rem;
     }
+    
     /* Input field styling */
     .stTextInput>div>div>input {
         padding: 0.5rem;
         font-size: 1rem;
     }
-    /* Collapsible tree view styling */
+    
+    /* Collapsible tree for event log */
     details {
       border: 1px solid #ddd;
       border-radius: 4px;
@@ -58,23 +60,18 @@ st.markdown(
       font-weight: bold;
       margin-bottom: 5px;
     }
-    /* Flex container for Search input and Buttons */
+    
+    /* Flex container for search input and button */
     .search-container {
         display: flex;
         gap: 10px;
         align-items: center;
         margin-bottom: 20px;
     }
-    .search-container .sbox {
-        flex: 3;
-    }
-    .search-container .btn {
-        flex: 1;
-    }
+    .search-container .sbox { flex: 3; }
+    .search-container .btn { flex: 1; }
     </style>
-    """,
-    unsafe_allow_html=True,
-)
+    """, unsafe_allow_html=True)
 
 # ----------------------------------------------------------------------
 # Import Agent and Tools
@@ -91,7 +88,7 @@ from quantalogic.tools import (
 )
 
 # ==============================================================================
-# Constants & Environment Check
+# Global Constants and Environment Check
 # ==============================================================================
 MAX_ITERATIONS = 10
 MODEL_NAME = "openrouter/openai/gpt-4o-mini"
@@ -99,54 +96,63 @@ OUTPUT_DIRECTORY = "./results"
 
 if not os.environ.get("OPENROUTER_API_KEY"):
     st.error("The environment variable OPENROUTER_API_KEY is not set!")
-    st.stop()  # Halt execution if key is missing
+    st.stop()
 
 # ==============================================================================
-# Session State Initialization for logs
+# Session State Initialization for Logs
 # ==============================================================================
 if "token_log" not in st.session_state:
     st.session_state.token_log = ""
 if "event_log" not in st.session_state:
     st.session_state.event_log = []
 
-# ==============================================================================
-# Global placeholders for live log displays (set later in main)
-# ==============================================================================
+# Global placeholders for displaying logs in UI
 token_placeholder = None
 event_placeholder = None
 
-
 # ==============================================================================
-# Utility: Generate Unique Report Filename
+# Utility: Generate a Unique Report Filename
 # ==============================================================================
-def get_next_report_filename():
-    """Returns a unique filename in the form report_001.md within OUTPUT_DIRECTORY."""
+def get_next_report_filename() -> str:
+    """
+    Returns a unique filename in the format report_001.md inside OUTPUT_DIRECTORY.
+    """
     if not os.path.exists(OUTPUT_DIRECTORY):
         os.makedirs(OUTPUT_DIRECTORY)
-    files = [
-        f
-        for f in os.listdir(OUTPUT_DIRECTORY)
-        if f.startswith("report_") and f.endswith(".md")
-    ]
+    files = [f for f in os.listdir(OUTPUT_DIRECTORY) if f.startswith("report_") and f.endswith(".md")]
     max_num = 0
     for f in files:
         try:
             num = int(f[len("report_") : -3])
-            if num > max_num:
-                max_num = num
+            max_num = max(max_num, num)
         except Exception:
             continue
     new_num = max_num + 1
     return f"report_{new_num:03d}.md"
 
+# ==============================================================================
+# Utility: Poll for Final Report File Existence
+# ==============================================================================
+def wait_for_final_report(report_path: str, wait_seconds: int = 5) -> bool:
+    """
+    Polls for the existence of the final report file for up to wait_seconds seconds.
+    """
+    start_time = time.time()
+    while time.time() - start_time < wait_seconds:
+        if os.path.exists(report_path):
+            return True
+        time.sleep(0.5)
+    return False
 
 # ==============================================================================
-# Utility: Generate Collapsible Tree HTML for Event Log
+# Utility: Convert Data to an HTML Collapsible Tree View
 # ==============================================================================
-def get_tree_html(data, indent=0):
-    """Recursively converts data (dict, list, or basic type) into an HTML collapsible tree view."""
+def get_tree_html(data, indent: int = 0) -> str:
+    """
+    Recursively converts data (dictionary, list, or basic types) into an HTML collapsible tree.
+    """
     html = ""
-    spacing = indent * 20  # pixels for indenting
+    spacing = indent * 20  # pixels
     if isinstance(data, dict):
         for key, value in data.items():
             html += f"<details style='margin-left:{spacing}px' open>"
@@ -163,12 +169,13 @@ def get_tree_html(data, indent=0):
         html += f"<div style='margin-left:{spacing}px'>{data}</div>"
     return html
 
-
 # ==============================================================================
-# Custom Callback Functions for Streaming Output & Events
+# Callback: Print Streaming Tokens in Live Output Panel
 # ==============================================================================
 def streamlit_print_token(event: str, data: any = None):
-    """Update the Live Output panel with stream tokens."""
+    """
+    Update the live output panel with streaming tokens.
+    """
     if data:
         st.session_state.token_log += str(data)
         token_placeholder.markdown(
@@ -180,17 +187,19 @@ def streamlit_print_token(event: str, data: any = None):
                 font-family: monospace;
                 white-space: pre-wrap;
                 max-height: 300px;
-                overflow-y: auto;
-            ">
+                overflow-y: auto;">
             {st.session_state.token_log}
             </div>
-            """,
-            unsafe_allow_html=True,
+            """, unsafe_allow_html=True
         )
 
-
+# ==============================================================================
+# Callback: Log and Display Events in a Collapsible Tree View
+# ==============================================================================
 def streamlit_print_events(event: str, data: any = None):
-    """Update the Event Log panel by rendering event details as a collapsible tree view."""
+    """
+    Display event details in the event log pane using collapsible HTML.
+    """
     html = f"<div style='border: 1px solid #ccc; margin-bottom: 10px; padding:10px;'>"
     html += f"<div><strong>Event:</strong> {event}</div>"
     if data:
@@ -201,15 +210,15 @@ def streamlit_print_events(event: str, data: any = None):
     combined = "<h3>Event Log</h3>" + "<br>".join(st.session_state.event_log)
     event_placeholder.markdown(combined, unsafe_allow_html=True)
 
-
+# ==============================================================================
+# Callback: Ask for User Validation (auto-confirmation in this demo)
+# ==============================================================================
 def ask_for_user_validation(question: str) -> bool:
-    """Display a validation prompt and return True (auto-confirm)."""
     st.info(question)
     return True
 
-
 # ==============================================================================
-# Agent & Tools Setup
+# Agent and Tools Setup
 # ==============================================================================
 tools = [
     SerpApiSearchTool(),
@@ -218,9 +227,7 @@ tools = [
     ReplaceInFileTool(),
     ReadHTMLTool(),
     ListDirectoryTool(),
-    LLMTool(
-        name="report_writer", model_name=MODEL_NAME, on_token=streamlit_print_token
-    ),
+    LLMTool(name="report_writer", model_name=MODEL_NAME, on_token=streamlit_print_token),
 ]
 
 agent = Agent(
@@ -229,7 +236,7 @@ agent = Agent(
     ask_for_user_validation=ask_for_user_validation,
 )
 
-# Register event listeners for various agent events
+# Register agent event listeners for detailed logging.
 agent.event_emitter.on(
     [
         "task_complete",
@@ -246,9 +253,8 @@ agent.event_emitter.on(
 )
 agent.event_emitter.on("stream_chunk", streamlit_print_token)
 
-
 # ==============================================================================
-# Main Application Layout and Search Form
+# Main Application Layout
 # ==============================================================================
 def main():
     global token_placeholder, event_placeholder
@@ -258,146 +264,131 @@ def main():
     st.sidebar.info(
         """
 Enter a subject for deep multi-source research analysis.
-The AI will stream output and events, and the final report will be saved uniquely (e.g., report_001.md).
-When the task is finished, a success message will prompt you to switch to the Final Report tab.
+The agent will stream output and detailed event logs in real time.
+After the task completes, a final report — including an Executive Summary and a Final Report Summary — 
+will be generated and displayed in the Final Report tab.
         """
     )
 
-    # Header and Subheader on the Main Page
+    # Header and Description on the Main Page
     st.title("🔍 Quantalogic Deep Search")
     st.subheader("Comprehensive Multi-Source Research Analysis")
     st.markdown(
         """
-Enter a subject below and click the Start Search button.
-While the task is in progress, the live output and event log will update in real time.
-Once complete, the generated report will appear in the Final Report tab.
+Enter a subject below and click the "Start Search" button.
+You will see live output and event logs while the task is processing.
+Once complete, you will be alerted and the final report will appear in the Final Report tab.
         """
     )
 
-    # Search container: using a flex box layout for input and two buttons
+    # Search Container using a Flex Layout
     with st.container():
         st.markdown("<div class='search-container'>", unsafe_allow_html=True)
         subject_to_search = st.text_input(
             "",
             key="search_input",
-            placeholder="Enter search subject (e.g., Renewable Energy Trends)",
-            label_visibility="collapsed",
+            placeholder="e.g., Renewable Energy Trends",
+            label_visibility="collapsed"
         )
         start_search = st.button("Start Search")
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("---")
 
-    # Create tabs for Live Output, Event Log, and Final Report
+    # Tabs for Live Output, Event Log, and Final Report
     tabs = st.tabs(["Live Output", "Event Log", "Final Report"])
     token_placeholder = tabs[0].empty()
     with tabs[1]:
         st.markdown("<h3>Event Log</h3>", unsafe_allow_html=True)
     event_placeholder = tabs[1].empty()
 
-    # When a search is started...
+    # Execute deep search task if search initiated and subject is provided.
     if start_search and subject_to_search.strip():
-        # Generate a unique report file name.
+        # Generate a unique filename and define path for the final report.
         final_report_filename = get_next_report_filename()
+        final_report_path = os.path.join(OUTPUT_DIRECTORY, final_report_filename)
 
-        # Clear previous logs.
+        # Clear previous logs from session state and UI.
         st.session_state.token_log = ""
         st.session_state.event_log = []
         token_placeholder.empty()
         event_placeholder.empty()
 
-        # Build the deep search prompt, including the report filename.
+        # Build the deep search task prompt with clear instructions for generating
+        # an Executive Summary and a Final Report Summary.
         task_prompt = f"""
-MISSION: Execute comprehensive multi-source research analysis on this subject: {subject_to_search}
+MISSION: Execute comprehensive multi-source research analysis on the subject: {subject_to_search}
 
 YOU MUST COMPLETE THE SEARCH IN LESS THAN {MAX_ITERATIONS} ITERATIONS.
 
-- Language: Primary English, include significant non-English sources if relevant
+1. SEARCH:
+   - Utilize search tools to locate relevant information on the given subject.
+   - Analyze the most promising results for deeper insights.
+   - Iterate as needed until a comprehensive understanding is achieved.
 
-1. SEARCH About the subject 
-   - step1: Use a search tool to find information related to the subject
-   - step2: Once you find a search result, choose one to get a better understanding
-   - step3: Repeat if necessary until you understand the subject fully
-
-2. ANALYSIS / SYNTHESIS REQUIREMENTS:
-   - Cross-reference findings
-   - Highlight consensus versus controversy
-   - Quantify confidence levels for major claims
-   - Identify knowledge gaps
-   - Note emerging trends
-   - Compare geographical/cultural perspectives
+2. ANALYSIS / SYNTHESIS:
+   - Cross-reference the findings.
+   - Identify consensus versus controversy.
+   - Quantify the confidence level for major claims.
+   - Highlight critical knowledge gaps and emerging trends.
+   - Present geographical and cultural perspectives.
 
 3. FINAL REPORT GENERATION:
-   Write a final report in {OUTPUT_DIRECTORY}/{final_report_filename}:
-
+   Write a final report in {final_report_path} containing at least 2000 words and including the following sections:
+   
    ## Executive Summary
-   - Key findings and implications
-   - Confidence assessment
-   - Critical knowledge gaps
-
+   - Summarize key findings, implications, and confidence assessments.
+   
    ## Methodology
-   - Search strategy
-   - Source selection criteria
-   - Analysis framework
-   - Limitations
-
+   - Describe the search strategy, source selection criteria, analytical framework, and limitations.
+   
    ## Findings
-   - Major themes
-   - Supporting evidence
-   - Contrasting views
-   - Statistical analysis
-   - Trend analysis
-
+   - Present major themes, supporting evidence, contrasting views, statistical and trend analyses.
+   
    ## Source Analysis
-   - Credibility assessment
-   - Bias evaluation
-   - Methodology review
-
+   - Assess source credibility, biases, and methodological reviews.
+   
    ## Recommendations
-   - Research gaps to address
-   - Suggested follow-up studies
-   - Practical applications
-
+   - Identify research gaps, propose follow-up studies, and discuss practical applications.
+   
    ## Citations
-   - Full bibliography
-   - Citation metrics
-   - Source credibility scores
-
-   ## Minimum length of the final report: at least 2000 words
-
-   Format all content using GitHub-flavored markdown with proper heading hierarchy, code blocks, tables, and emphasis formatting.
+   - Provide a complete bibliography, citation metrics, and source credibility scores.
+   
+   ## Final Report Summary
+   - Conclude with a succinct summary of the entire report, encapsulating overall findings and insights.
+   
+All content must be formatted as GitHub-flavored markdown with proper headings, code blocks, tables, and emphasis.
         """
 
-        # Kick off the deep search task with a spinner.
+        # Execute the deep search task with streaming output.
         with st.spinner("Processing Deep Search..."):
-            result = agent.solve_task(
+            _ = agent.solve_task(
                 task_prompt, streaming=True, max_iterations=MAX_ITERATIONS
             )
 
-        # On task completion: show a success message.
-        st.success(
-            "Task complete! Please switch to the Final Report tab to view the generated report."
-        )
+        # Alert the user that the task is complete.
+        st.success("Task complete! The final report has been generated.")
+        st.balloons()
 
-        # Read and display only the final report file's content.
-        final_report_path = os.path.join(OUTPUT_DIRECTORY, final_report_filename)
-        if os.path.exists(final_report_path):
-            with open(final_report_path, "r", encoding="utf-8") as file:
-                report_content = file.read()
-            tabs[2].markdown(report_content)
+        # Poll for the final report file for up to 5 seconds.
+        if wait_for_final_report(final_report_path, wait_seconds=5):
+            try:
+                with open(final_report_path, "r", encoding="utf-8") as file:
+                    report_content = file.read()
+                tabs[2].markdown(report_content)
+            except Exception as e:
+                st.error(f"Error reading the final report file: {e}")
         else:
-            tabs[2].markdown("Final report file not found!")
-
+            tabs[2].markdown("Final report file was not found after waiting. Please check the Event Log for more details.")
 
 # ==============================================================================
-# Embedded Streamlit Launcher (while preserving uv run)
+# Streamlit Application Launcher
 # ==============================================================================
 if __name__ == "__main__":
     if os.environ.get("STREAMLIT_EMBEDDED") != "1":
         os.environ["STREAMLIT_EMBEDDED"] = "1"
         sys.argv = ["streamlit", "run", sys.argv[0]]
         from streamlit.web import cli as stcli
-
         sys.exit(stcli.main())
     else:
         main()
