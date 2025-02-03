@@ -13,13 +13,43 @@ import json
 import streamlit as st
 
 # ----------------------------------------------------------------------
-# IMPORTANT: Must be the very first Streamlit command!
+# Set page config as the very first Streamlit call
 # ----------------------------------------------------------------------
 st.set_page_config(
     page_title="Deep Search AI",
     page_icon="🔍",
     layout="wide",
     initial_sidebar_state="expanded"
+)
+
+# ----------------------------------------------------------------------
+# Optional: inject custom CSS for an improved UX
+# ----------------------------------------------------------------------
+st.markdown(
+    """
+    <style>
+    /* Overall app font */
+    .stApp { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+    /* Button styling */
+    .stButton>button {
+        background-color: #4CAF50;
+        color: white;
+        font-size: 1rem;
+        font-weight: bold;
+        border-radius: 5px;
+        border: none;
+        padding: 0.5rem 1rem;
+    }
+    /* Input field styling */
+    .stTextInput>div>div>input {
+        padding: 0.5rem;
+        font-size: 1rem;
+    }
+    /* Add spacing for containers */
+    .container { margin-bottom: 20px; }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
 from quantalogic import Agent
@@ -55,11 +85,10 @@ if "event_log" not in st.session_state:
     st.session_state.event_log = []
 
 # ==============================================================================
-# Placeholders for real-time output panels
+# Global placeholders for live logs (will be set inside main())
 # ==============================================================================
-
-token_placeholder = st.empty()
-event_placeholder = st.empty()
+token_placeholder = None
+event_placeholder = None
 
 # ==============================================================================
 # Custom Callback Functions for Streaming Output & Events
@@ -67,8 +96,7 @@ event_placeholder = st.empty()
 
 def streamlit_print_token(event: str, data: any = None):
     """
-    Callback to update the streaming tokens panel.
-    Appends each token received and re-renders the content.
+    When the agent streams tokens, update the Live Output panel.
     """
     if data:
         st.session_state.token_log += str(data)
@@ -80,6 +108,8 @@ def streamlit_print_token(event: str, data: any = None):
                 border-radius: 5px;
                 font-family: monospace;
                 white-space: pre-wrap;
+                max-height: 300px;
+                overflow-y: auto;
             ">
             {st.session_state.token_log}
             </div>
@@ -89,22 +119,24 @@ def streamlit_print_token(event: str, data: any = None):
 
 def streamlit_print_events(event: str, data: any = None):
     """
-    Callback to update the event log panel.
-    Each new event is appended as a formatted HTML block.
+    When the agent emits an event, update the Event Log panel.
     """
     event_entry = (
-        f"Event: {event}\n"
-        f"Data: {json.dumps(data, indent=2) if data else 'No data'}"
+        f"<strong>Event:</strong> {event}<br>"
+        f"<strong>Data:</strong> {json.dumps(data, indent=2) if data else 'No data'}"
     )
     st.session_state.event_log.append(event_entry)
-    combined = "<br>".join(
+    combined = "<br><br>".join(
         [
-            f"""<pre style="
+            f"""<div style="
                     background-color: #e8f4fd;
-                    padding: 5px;
-                    border-radius: 3px;
+                    padding: 10px;
+                    border-radius: 5px;
                     font-family: monospace;
-                ">{entry}</pre>"""
+                    white-space: pre-wrap;
+                    max-height: 300px;
+                    overflow-y: auto;
+                ">{entry}</div>"""
             for entry in st.session_state.event_log
         ]
     )
@@ -112,8 +144,7 @@ def streamlit_print_events(event: str, data: any = None):
 
 def ask_for_user_validation(question: str) -> bool:
     """
-    A simple user validation function.
-    In this Streamlit app we automatically confirm but also show the question.
+    This function displays the validation question and auto-confirms.
     """
     st.info(question)
     return True
@@ -138,7 +169,7 @@ agent = Agent(
     ask_for_user_validation=ask_for_user_validation,
 )
 
-# Register our event listeners for various agent events
+# Register event listeners for various agent events
 agent.event_emitter.on(
     [
         "task_complete",
@@ -160,31 +191,40 @@ agent.event_emitter.on("stream_chunk", streamlit_print_token)
 # ==============================================================================
 
 def main():
-    """
-    Main function to run the Streamlit Deep Search application.
-    This function renders the UI for entering the search subject,
-    and displays live streaming output and events.
-    """
+    global token_placeholder, event_placeholder
+
     st.title("🔍 Deep Search Application")
+    st.subheader("Comprehensive Multi-Source Research Analysis")
     st.markdown(
         """
-This application uses advanced AI tools to execute a comprehensive multi-source
-research analysis on any topic you choose. The AI streams its output and events
-in real-time below.
-"""
+Welcome to the Deep Search application. Enter a subject below to begin an in-depth, multi-source research analysis.
+        """
     )
 
-    subject_to_search = st.text_input("Enter a subject to search:", placeholder="e.g., Renewable Energy Trends")
-    start_search = st.button("Start Search")
+    # ------------------------------------------------------------------
+    # Search Input Form
+    # ------------------------------------------------------------------
+    with st.container():
+        subject_to_search = st.text_input("Search Subject", placeholder="e.g., Renewable Energy Trends")
+        start_search = st.button("Start Search")
+
+    st.markdown("---")
+    
+    # ------------------------------------------------------------------
+    # Tabs for output organization
+    # ------------------------------------------------------------------
+    tabs = st.tabs(["Live Output", "Event Log", "Final Report"])
+    token_placeholder = tabs[0].empty()
+    event_placeholder = tabs[1].empty()
 
     if start_search and subject_to_search:
-        # Clear previous logs when a new search starts
+        # Reset the logs
         st.session_state.token_log = ""
         st.session_state.event_log = []
         token_placeholder.empty()
         event_placeholder.empty()
 
-        # Build the task prompt for deep search
+        # Build the deep search task prompt
         task_prompt = f"""
 MISSION: Execute comprehensive multi-source research analysis on this subject: {subject_to_search}
 
@@ -193,80 +233,74 @@ YOU MUST COMPLETE THE SEARCH IN LESS THAN {MAX_ITERATIONS} ITERATIONS.
 - Language: Primary English, include significant non-English sources if relevant
 
 1. SEARCH About the subject 
-
-- step1: Use a search tool to find information related to the subject
-- step2: Once you find some result from search, choose which one to read to get a better understanding of the subject
-- step3: Repeat the search if needed, until you have a clear understanding of the subject -> go to step1
+   - step1: Use a search tool to find information related to the subject
+   - step2: Once you find a search result, choose one to get a better understanding
+   - step3: Repeat if necessary until you understand the subject fully
 
 2. ANALYSIS / SYNTHESIS REQUIREMENTS:
-
-- Cross-reference findings
-- Highlight consensus vs. controversy
-- Quantify confidence levels for major claims
-- Identify knowledge gaps
-- Note emerging trends
-- Compare geographical/cultural perspectives
+   - Cross-reference findings
+   - Highlight consensus versus controversy
+   - Quantify confidence levels for major claims
+   - Identify knowledge gaps
+   - Note emerging trends
+   - Compare geographical/cultural perspectives
 
 3. FINAL REPORT GENERATION:
+   Write a final report in {OUTPUT_DIRECTORY}/:
 
-Write a final report in {OUTPUT_DIRECTORY}/:
+   ## Executive Summary
+   - Key findings and implications
+   - Confidence assessment
+   - Critical knowledge gaps
 
-## Executive Summary
+   ## Methodology
+   - Search strategy
+   - Source selection criteria
+   - Analysis framework
+   - Limitations
 
-- Key findings and implications
-- Confidence assessment
-- Critical knowledge gaps
+   ## Findings
+   - Major themes
+   - Supporting evidence
+   - Contrasting views
+   - Statistical analysis
+   - Trend analysis
 
-## Methodology
-- Search strategy
-- Source selection criteria
-- Analysis framework
-- Limitations
+   ## Source Analysis
+   - Credibility assessment
+   - Bias evaluation
+   - Methodology review
 
-## Findings
-- Major themes
-- Supporting evidence
-- Contrasting views
-- Statistical analysis
-- Trend analysis
+   ## Recommendations
+   - Research gaps to address
+   - Suggested follow-up studies
+   - Practical applications
 
-## Source Analysis
-- Credibility assessment
-- Bias evaluation
-- Methodology review
+   ## Citations
+   - Full bibliography
+   - Citation metrics
+   - Source credibility scores
 
-## Recommendations
-- Research gaps to address
-- Suggested follow-up studies
-- Practical applications
+   ## Minimum length of the final report: at least 2000 words
 
-## Citations
-- Full bibliography
-- Citation metrics
-- Source credibility scores
+   Format all content using GitHub-flavored markdown with proper heading hierarchy, code blocks, tables, and emphasis formatting.
+        """
 
-## Minimum length of the final report: at least 2000 words
-
-Format all content using GitHub-flavored markdown with proper heading hierarchy, code blocks, tables, and emphasis formatting.
-"""
-        st.markdown("### Initiating Deep Search...")
-        # Execute the deep search and stream the results
-        with st.spinner("Processing deep search..."):
+        with st.spinner("Processing Deep Search..."):
             result = agent.solve_task(task_prompt, streaming=True, max_iterations=MAX_ITERATIONS)
-        st.markdown("### Final Report")
-        st.markdown(result)
+        tabs[2].markdown("### Final Report")
+        tabs[2].markdown(result)
 
 # ==============================================================================
 # Embedded Streamlit Launcher (while preserving uv run)
 # ==============================================================================
+
 if __name__ == "__main__":
-    # When using uv run, embed the streamlit command while checking an environment flag
-    # to avoid re-launch loops.
     if os.environ.get("STREAMLIT_EMBEDDED") != "1":
+        # Embed the streamlit command to generate proper ScriptRunContext with uv run.
         os.environ["STREAMLIT_EMBEDDED"] = "1"
         sys.argv = ["streamlit", "run", sys.argv[0]]
         from streamlit.web import cli as stcli
         sys.exit(stcli.main())
     else:
-        # Already embedded → run the main application
         main()
