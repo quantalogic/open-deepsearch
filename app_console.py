@@ -14,14 +14,17 @@ from quantalogic.console_print_events import console_print_events
 from quantalogic.console_print_token import console_print_token
 from quantalogic.tools import (
     DuckDuckGoSearchTool,
+    SerpApiSearchTool,
     ReadFileTool,
+    ReplaceInFileTool,
     WriteFileTool,
     ReadHTMLTool,
-    LLMTool
+    LLMTool,
+    ListDirectoryTool
 )
 
 
-MAX_ITERATIONS = 20
+MAX_ITERATIONS = 10
 MODEL_NAME = "openrouter/openai/gpt-4o-mini"
 
 # Verify API key is set - required for authentication with DeepSeek's API
@@ -32,11 +35,14 @@ if not os.environ.get("OPENROUTER_API_KEY"):
 
 
 tools = [
-    DuckDuckGoSearchTool(),
+# DuckDuckGoSearchTool(),
+    SerpApiSearchTool(),
     ReadFileTool(),
     WriteFileTool(),
+    ReplaceInFileTool(),
     ReadHTMLTool(),
-    LLMTool(name="report_writer", model_name=MODEL_NAME),
+    ListDirectoryTool(),
+    LLMTool(name="report_writer", model_name=MODEL_NAME,on_token=console_print_token)
 ]
 
 
@@ -83,19 +89,20 @@ subject_to_search = input("Enter a subject to search: ")
 
 
 task_prompt = f"""
-MISSION: Execute comprehensive multi-source research analysis on {subject_to_search}
+MISSION: Execute comprehensive multi-source research analysis on this subject: {subject_to_search}
 
-1. SEARCH PARAMETERS:
-- Primary search depth: Minimum 10 high-quality sources
-- Source types: Academic papers, industry reports, expert blogs, reputable news, research institutions
-- Time range: Last 5 years (unless historical context required)
-- Authority filtering: Citations count > 10, domain authority > 60
+YOU MUST COMPLETE THE SEARCH IN LESS THAN {MAX_ITERATIONS} ITERATIONS.
+
 - Language: Primary English, include significant non-English sources if relevant
 
-2. DATA COLLECTION [Output: {output_directory}]:
-- Save each of your intermediate search in the output directory
+1. SEARCH About the subject 
 
-3. SYNTHESIS REQUIREMENTS:
+- step1: Use a search tool to find information related to the subject
+- step2: Once you find some result from search, choose which one to read to get a better understanding of the subject
+- step3: Repeat the search if needed, until you have a clear understanding of the subject -> got to step1
+
+2. ANALYSIS / SYNTHESIS REQUIREMENTS:
+
 - Cross-reference findings
 - Highlight consensus vs. controversy
 - Quantify confidence levels for major claims
@@ -103,9 +110,12 @@ MISSION: Execute comprehensive multi-source research analysis on {subject_to_sea
 - Note emerging trends
 - Compare geographical/cultural perspectives
 
-4. REPORT GENERATION [{output_directory}/report.md]:
+3. FINAL REPORT GENERATION:
+
+Write a final report in {output_directory}/:
 
 ## Executive Summary
+
 - Key findings and implications
 - Confidence assessment
 - Critical knowledge gaps
@@ -128,11 +138,6 @@ MISSION: Execute comprehensive multi-source research analysis on {subject_to_sea
 - Bias evaluation
 - Methodology review
 
-## Data Visualization
-- Key metrics charts
-- Relationship maps
-- Trend graphs
-
 ## Recommendations
 - Research gaps to address
 - Suggested follow-up studies
@@ -143,7 +148,7 @@ MISSION: Execute comprehensive multi-source research analysis on {subject_to_sea
 - Citation metrics
 - Source credibility scores
 
-Minimum length: at least 2000 words
+## Minimum length of the final report: at least 2000 words
 
 Format all content using GitHub-flavored markdown with proper heading hierarchy, code blocks, tables, and emphasis formatting.
 """
