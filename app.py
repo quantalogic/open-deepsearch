@@ -99,7 +99,7 @@ if "event_log" not in st.session_state:
     st.session_state.event_log = []
 
 # ==============================================================================
-# Global placeholders for live logs (initialized later in main)
+# Global placeholders for live log displays (will be set in main)
 # ==============================================================================
 token_placeholder = None
 event_placeholder = None
@@ -143,7 +143,7 @@ def get_tree_html(data, indent=0):
             html += get_tree_html(item, indent + 1)
             html += "</details>"
     else:
-        # Basic value
+        # Render basic values
         html += f"<div style='margin-left:{spacing}px'>{data}</div>"
     return html
 
@@ -177,7 +177,7 @@ def streamlit_print_token(event: str, data: any = None):
 def streamlit_print_events(event: str, data: any = None):
     """
     Callback to update the Event Log panel.
-    Renders the event info along with its data in a collapsible tree view.
+    Renders event details in a collapsible tree view.
     """
     html = f"<div style='border: 1px solid #ccc; margin-bottom: 10px; padding:10px;'>"
     html += f"<div><strong>Event:</strong> {event}</div>"
@@ -186,7 +186,8 @@ def streamlit_print_events(event: str, data: any = None):
         html += tree_html
     html += "</div>"
     st.session_state.event_log.append(html)
-    combined = "<br>".join(st.session_state.event_log)
+    # Combine all events. A header is added at the top.
+    combined = "<h3>Event Log</h3>" + "<br>".join(st.session_state.event_log)
     event_placeholder.markdown(combined, unsafe_allow_html=True)
 
 def ask_for_user_validation(question: str) -> bool:
@@ -248,39 +249,55 @@ def main():
         """
 Enter a subject for deep multi-source research analysis.
 The AI will stream its output and events, and the final report will be saved uniquely (e.g., report_001.md).
-Check the Final Report tab once the search completes.
+Once the task finishes, a success message will appear—please switch to the Final Report tab to see the result.
+Click the Clear button to reset the search and logs.
         """
     )
 
-    # Main header and description
     st.title("🔍 Deep Search Application")
     st.subheader("Comprehensive Multi-Source Research Analysis")
     st.markdown(
         """
-Welcome! Use the input below to start a deep search. The application displays:
-- Live AI output (tokens streamed in real-time)
-- An interactive, collapsible tree view for event details
-- Finally, the generated report, saved as a uniquely named file
+Welcome! Enter a subject below and click Start Search. The application will:
+• Stream real-time AI output.
+• Display a detailed, collapsible tree view for events.
+• Save the final report uniquely and display its content (in the Final Report tab) once the task is complete.
         """
     )
 
-    # Container for search input
-    with st.container():
-        subject_to_search = st.text_input("Search Subject", placeholder="e.g., Renewable Energy Trends")
+    # Arrange input and buttons in a row
+    col1, col2, col3 = st.columns([3, 1, 1])
+    with col1:
+        subject_to_search = st.text_input(
+            "Search Subject",
+            key="search_input",
+            placeholder="e.g., Renewable Energy Trends"
+        )
+    with col2:
         start_search = st.button("Start Search")
+    with col3:
+        if st.button("Clear"):
+            st.session_state.search_input = ""
+            st.session_state.token_log = ""
+            st.session_state.event_log = []
+            st.experimental_rerun()
 
     st.markdown("---")
     
-    # Create tabs for output organization
+    # Create tabs for Live Output, Event Log, and Final Report
     tabs = st.tabs(["Live Output", "Event Log", "Final Report"])
     token_placeholder = tabs[0].empty()
+    # Pre-add a header for Event Log before using empty() for dynamic updates
+    with tabs[1]:
+        st.markdown("<h3>Event Log</h3>", unsafe_allow_html=True)
     event_placeholder = tabs[1].empty()
 
-    if start_search and subject_to_search:
+    # When a search is started...
+    if start_search and subject_to_search.strip():
         # Generate a unique report file name
         final_report_filename = get_next_report_filename()
 
-        # Reset logs for a new search
+        # Clear previous logs
         st.session_state.token_log = ""
         st.session_state.event_log = []
         token_placeholder.empty()
@@ -348,16 +365,19 @@ YOU MUST COMPLETE THE SEARCH IN LESS THAN {MAX_ITERATIONS} ITERATIONS.
    Format all content using GitHub-flavored markdown with proper heading hierarchy, code blocks, tables, and emphasis formatting.
         """
 
-        # Kick off the deep search task with a spinner hint
+        # Kick off the deep search task with a spinner indication
         with st.spinner("Processing Deep Search..."):
             result = agent.solve_task(task_prompt, streaming=True, max_iterations=MAX_ITERATIONS)
+        
+        # Indicate task completion with a success message in the main area.
+        st.success("Task complete! Please switch to the Final Report tab to see the generated report.")
 
-        # After task completion, try reading the final report file
+        # After task completion, read and display the final report file.
         final_report_path = os.path.join(OUTPUT_DIRECTORY, final_report_filename)
         if os.path.exists(final_report_path):
             with open(final_report_path, "r", encoding="utf-8") as file:
                 report_content = file.read()
-            tabs[2].markdown(f"### Final Report: {final_report_filename}")
+            # In the Final Report tab, display only the file's content.
             tabs[2].markdown(report_content)
         else:
             tabs[2].markdown("Final report file not found!")
