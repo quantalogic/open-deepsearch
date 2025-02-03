@@ -16,14 +16,14 @@ import streamlit as st
 # Set page config as the very first Streamlit command
 # ----------------------------------------------------------------------
 st.set_page_config(
-    page_title="Deep Search AI",
+    page_title="Quantalogic Deep Search",
     page_icon="🔍",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
 # ----------------------------------------------------------------------
-# Inject custom CSS for improved UX, including collapsible tree view styling
+# Inject custom CSS for improved UX (fonts, buttons, collapsible tree, etc.)
 # ----------------------------------------------------------------------
 st.markdown(
     """
@@ -45,8 +45,6 @@ st.markdown(
         padding: 0.5rem;
         font-size: 1rem;
     }
-    /* Container spacing */
-    .container { margin-bottom: 20px; }
     /* Collapsible tree view styling */
     details {
       border: 1px solid #ddd;
@@ -59,6 +57,19 @@ st.markdown(
       cursor: pointer;
       font-weight: bold;
       margin-bottom: 5px;
+    }
+    /* Flex container for Search input and Buttons */
+    .search-container {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+    .search-container .sbox {
+        flex: 3;
+    }
+    .search-container .btn {
+        flex: 1;
     }
     </style>
     """,
@@ -91,7 +102,7 @@ if not os.environ.get("OPENROUTER_API_KEY"):
     st.stop()  # Halt execution if key is missing
 
 # ==============================================================================
-# Session State Initialization (for logs)
+# Session State Initialization for logs
 # ==============================================================================
 if "token_log" not in st.session_state:
     st.session_state.token_log = ""
@@ -99,23 +110,28 @@ if "event_log" not in st.session_state:
     st.session_state.event_log = []
 
 # ==============================================================================
-# Global placeholders for live log displays (will be set in main)
+# Global placeholders for live log displays (set later in main)
 # ==============================================================================
 token_placeholder = None
 event_placeholder = None
+
 
 # ==============================================================================
 # Utility: Generate Unique Report Filename
 # ==============================================================================
 def get_next_report_filename():
-    """Returns a unique filename like report_001.md in the OUTPUT_DIRECTORY."""
+    """Returns a unique filename in the form report_001.md within OUTPUT_DIRECTORY."""
     if not os.path.exists(OUTPUT_DIRECTORY):
         os.makedirs(OUTPUT_DIRECTORY)
-    files = [f for f in os.listdir(OUTPUT_DIRECTORY) if f.startswith("report_") and f.endswith(".md")]
+    files = [
+        f
+        for f in os.listdir(OUTPUT_DIRECTORY)
+        if f.startswith("report_") and f.endswith(".md")
+    ]
     max_num = 0
     for f in files:
         try:
-            num = int(f[len("report_"):-3])
+            num = int(f[len("report_") : -3])
             if num > max_num:
                 max_num = num
         except Exception:
@@ -123,8 +139,9 @@ def get_next_report_filename():
     new_num = max_num + 1
     return f"report_{new_num:03d}.md"
 
+
 # ==============================================================================
-# Utility: Generate Collapsible Tree HTML
+# Utility: Generate Collapsible Tree HTML for Event Log
 # ==============================================================================
 def get_tree_html(data, indent=0):
     """Recursively converts data (dict, list, or basic type) into an HTML collapsible tree view."""
@@ -143,18 +160,15 @@ def get_tree_html(data, indent=0):
             html += get_tree_html(item, indent + 1)
             html += "</details>"
     else:
-        # Render basic values
         html += f"<div style='margin-left:{spacing}px'>{data}</div>"
     return html
+
 
 # ==============================================================================
 # Custom Callback Functions for Streaming Output & Events
 # ==============================================================================
 def streamlit_print_token(event: str, data: any = None):
-    """
-    Callback to update the Live Output panel.
-    Appends streamed tokens to the token_log and renders them.
-    """
+    """Update the Live Output panel with stream tokens."""
     if data:
         st.session_state.token_log += str(data)
         token_placeholder.markdown(
@@ -174,11 +188,9 @@ def streamlit_print_token(event: str, data: any = None):
             unsafe_allow_html=True,
         )
 
+
 def streamlit_print_events(event: str, data: any = None):
-    """
-    Callback to update the Event Log panel.
-    Renders event details in a collapsible tree view.
-    """
+    """Update the Event Log panel by rendering event details as a collapsible tree view."""
     html = f"<div style='border: 1px solid #ccc; margin-bottom: 10px; padding:10px;'>"
     html += f"<div><strong>Event:</strong> {event}</div>"
     if data:
@@ -186,16 +198,15 @@ def streamlit_print_events(event: str, data: any = None):
         html += tree_html
     html += "</div>"
     st.session_state.event_log.append(html)
-    # Combine all events. A header is added at the top.
     combined = "<h3>Event Log</h3>" + "<br>".join(st.session_state.event_log)
     event_placeholder.markdown(combined, unsafe_allow_html=True)
 
+
 def ask_for_user_validation(question: str) -> bool:
-    """
-    Displays a validation prompt and auto-confirms.
-    """
+    """Display a validation prompt and return True (auto-confirm)."""
     st.info(question)
     return True
+
 
 # ==============================================================================
 # Agent & Tools Setup
@@ -208,9 +219,7 @@ tools = [
     ReadHTMLTool(),
     ListDirectoryTool(),
     LLMTool(
-        name="report_writer",
-        model_name=MODEL_NAME,
-        on_token=streamlit_print_token
+        name="report_writer", model_name=MODEL_NAME, on_token=streamlit_print_token
     ),
 ]
 
@@ -237,73 +246,67 @@ agent.event_emitter.on(
 )
 agent.event_emitter.on("stream_chunk", streamlit_print_token)
 
+
 # ==============================================================================
-# Main Application Layout
+# Main Application Layout and Search Form
 # ==============================================================================
 def main():
     global token_placeholder, event_placeholder
 
-    # Sidebar with instructions
+    # Sidebar Instructions
     st.sidebar.title("Instructions")
     st.sidebar.info(
         """
 Enter a subject for deep multi-source research analysis.
-The AI will stream its output and events, and the final report will be saved uniquely (e.g., report_001.md).
-Once the task finishes, a success message will appear—please switch to the Final Report tab to see the result.
-Click the Clear button to reset the search and logs.
+The AI will stream output and events, and the final report will be saved uniquely (e.g., report_001.md).
+When the task is finished, a success message will prompt you to switch to the Final Report tab.
         """
     )
 
-    st.title("🔍 Deep Search Application")
+    # Header and Subheader on the Main Page
+    st.title("🔍 Quantalogic Deep Search")
     st.subheader("Comprehensive Multi-Source Research Analysis")
     st.markdown(
         """
-Welcome! Enter a subject below and click Start Search. The application will:
-• Stream real-time AI output.
-• Display a detailed, collapsible tree view for events.
-• Save the final report uniquely and display its content (in the Final Report tab) once the task is complete.
+Enter a subject below and click the Start Search button.
+While the task is in progress, the live output and event log will update in real time.
+Once complete, the generated report will appear in the Final Report tab.
         """
     )
 
-    # Arrange input and buttons in a row
-    col1, col2, col3 = st.columns([3, 1, 1])
-    with col1:
+    # Search container: using a flex box layout for input and two buttons
+    with st.container():
+        st.markdown("<div class='search-container'>", unsafe_allow_html=True)
         subject_to_search = st.text_input(
-            "Search Subject",
+            "",
             key="search_input",
-            placeholder="e.g., Renewable Energy Trends"
+            placeholder="Enter search subject (e.g., Renewable Energy Trends)",
+            label_visibility="collapsed",
         )
-    with col2:
         start_search = st.button("Start Search")
-    with col3:
-        if st.button("Clear"):
-            st.session_state.search_input = ""
-            st.session_state.token_log = ""
-            st.session_state.event_log = []
-            st.experimental_rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("---")
-    
+
     # Create tabs for Live Output, Event Log, and Final Report
     tabs = st.tabs(["Live Output", "Event Log", "Final Report"])
     token_placeholder = tabs[0].empty()
-    # Pre-add a header for Event Log before using empty() for dynamic updates
     with tabs[1]:
         st.markdown("<h3>Event Log</h3>", unsafe_allow_html=True)
     event_placeholder = tabs[1].empty()
 
     # When a search is started...
     if start_search and subject_to_search.strip():
-        # Generate a unique report file name
+        # Generate a unique report file name.
         final_report_filename = get_next_report_filename()
 
-        # Clear previous logs
+        # Clear previous logs.
         st.session_state.token_log = ""
         st.session_state.event_log = []
         token_placeholder.empty()
         event_placeholder.empty()
 
-        # Build the deep search task prompt with the report filename included
+        # Build the deep search prompt, including the report filename.
         task_prompt = f"""
 MISSION: Execute comprehensive multi-source research analysis on this subject: {subject_to_search}
 
@@ -365,22 +368,26 @@ YOU MUST COMPLETE THE SEARCH IN LESS THAN {MAX_ITERATIONS} ITERATIONS.
    Format all content using GitHub-flavored markdown with proper heading hierarchy, code blocks, tables, and emphasis formatting.
         """
 
-        # Kick off the deep search task with a spinner indication
+        # Kick off the deep search task with a spinner.
         with st.spinner("Processing Deep Search..."):
-            result = agent.solve_task(task_prompt, streaming=True, max_iterations=MAX_ITERATIONS)
-        
-        # Indicate task completion with a success message in the main area.
-        st.success("Task complete! Please switch to the Final Report tab to see the generated report.")
+            result = agent.solve_task(
+                task_prompt, streaming=True, max_iterations=MAX_ITERATIONS
+            )
 
-        # After task completion, read and display the final report file.
+        # On task completion: show a success message.
+        st.success(
+            "Task complete! Please switch to the Final Report tab to view the generated report."
+        )
+
+        # Read and display only the final report file's content.
         final_report_path = os.path.join(OUTPUT_DIRECTORY, final_report_filename)
         if os.path.exists(final_report_path):
             with open(final_report_path, "r", encoding="utf-8") as file:
                 report_content = file.read()
-            # In the Final Report tab, display only the file's content.
             tabs[2].markdown(report_content)
         else:
             tabs[2].markdown("Final report file not found!")
+
 
 # ==============================================================================
 # Embedded Streamlit Launcher (while preserving uv run)
@@ -390,6 +397,7 @@ if __name__ == "__main__":
         os.environ["STREAMLIT_EMBEDDED"] = "1"
         sys.argv = ["streamlit", "run", sys.argv[0]]
         from streamlit.web import cli as stcli
+
         sys.exit(stcli.main())
     else:
         main()
